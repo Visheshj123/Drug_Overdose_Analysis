@@ -1,0 +1,132 @@
+---
+title: "Analysis of Deaths by Race in Connecticut"
+output: html_notebook
+---
+
+```{r}
+.rs.restartR()
+drug_set = read.csv("/Users/vishesh.javangula@ibm.com/Code_Proj/Accidental_Drug_Related_Deaths_2012-2018.csv", header = TRUE, sep = ",")
+
+#Drop rows with blank value in Fentanyl and FentanylAnalogue 
+#drug_set <- drug_set[!(drug_set$Fentanyl == ""),]
+head(drug_set)
+
+#Vector of all columns to drop
+drops <- c('DateType', 'DeathCounty', 'Location', 'DescriptionofInjury', 'InjuryPlace', 'InjuryCounty', 'InjuryState', 'COD', 'MannerofDeath', 'DeathCityGeo', 'ResidenceCityGeo', 'InjuryCityGeo')
+
+#gets names of all columns, and deletes them if they're in vector 'drops'
+drug_set <- drug_set[,!(names(drug_set) %in% drops)]
+head(drug_set)
+
+#Converts all the Y values to 1, makes it easier to access the total
+install.packages("dplyr")
+library(dplyr)
+library(rlang)
+
+#uses Pipes, which string together functions by taking the ouput of one and putting it into another
+#Returns a count of each level by Race for drug Heroin
+df_total <- drug_set %>%
+        group_by(Race, Heroin) %>%
+        tally() 
+
+
+#add results into new table to graph
+head(df_total)
+df_total <- df_total[!(df_total$Heroin == ''),]
+df_total <- df_total[!(df_total$Race == ''),]
+df_total
+
+head(drug_set[["Fentanyl"]])
+drug_set$Fentanyl
+
+#TODO: Read this: https://stackoverflow.com/questions/47367579/dplyr-group-by-in-a-for-loop-r
+DrugStats <- function(drug_set, df_total){
+  
+    
+  drug_interests <- c('Fentanyl', 'Oxycodone', 'AnyOpioid')
+  col_names <- c('Fcount','Ocount','Acount')
+  j <- 1
+  for (i in drug_interests){
+    
+    #Tried making Fentanyl a factor to access it in for loop, 
+    df <- drug_set %>% group_by(Race, !!sym(i) ) %>% tally(name=col_names[j]) 
+    head(df)
+    df <- df[!(df[[i]] != 'Y'),]
+    df <- df[!(df$Race == ''),]
+    df_total <- merge(df_total, df, by="Race")
+    j <- j+1
+  }
+  df_total <- df_total %>% select(-c(Heroin,Fentanyl,Oxycodone, AnyOpioid)) %>% rename(Heroin=n)
+  Hispanic <- (df_total[3,2:5] + df_total[4,2:5])
+  Hispanic$Race <- 'Hispanic'
+  df_total <- df_total %>% rbind(Hispanic)
+  df_total <- df_total[-c(3,4),] 
+  df_total <- df_total[-c(3,4),] 
+  return(df_total)
+}
+
+df_total <- DrugStats(drug_set, df_total)
+df_total[1,1] <- 'Asian'
+#df_total <- df_total[-c(5,6),]
+df_total
+rm(df_total)
+
+```
+
+```{r}
+library(ggplot2)
+
+df_total
+p1 <- ggplot(data=df_total, aes(x= Race, y=Heroin, fill=Race)) + geom_bar(position = "dodge", stat="identity") + theme(text=element_text(size=7))  #by default, bar graphs are based off of a count, if you want to use column values as the height of a bar you need to use identity
+
+p2 <- ggplot(data = df_total, aes(x=Race,y=Fcount, fill=Race)) + geom_bar(position = 'dodge', stat = 'identity') + theme(text=element_text(size=7))
+
+p3 <- ggplot(data=df_total, aes(x=Race,y=Ocount, fill=Race)) + geom_bar(stat='identity') + theme(text=element_text(size=7))
+
+#Rename column as NA is not working
+p4 <- ggplot(data=df_total, aes(x=Race,y=Acount,fill=Race)) + geom_bar(stat = 'identity') + theme(text=element_text(size=7))
+
+#Combine plots and display
+source("http://peterhaschke.com/Code/multiplot.R")
+multiplot(p1,p2,p3,p4, cols=2)
+```
+
+
+
+As you can can see, White people in Connecticut seem to be affected the most by these drugs. But this is bias as conneticiut is majority white. 
+A better analysis would look at the proportion of Race being affected by These drugs. So lets look into this.
+
+According to the US Census Bureau there are 2,800,000 Whites, 420,000 Blacks, 175,000 Asians, 577,500 Hispanics. 
+
+```{r}
+slices <- c(2800000,420000,175000,577500)
+labels <- c('White','Blacks','Asians', 'Hispanic')
+pie(slices, labels=labels, main="Pie Chart of Race in Connenticut")
+```
+
+So the proportion of damage to each race is...
+
+```{r}
+#divide each row by the number of individuals in that race 
+Asian <- df_total[1,2:5] /175000
+Black <-  df_total[2,2:5] /420000
+White <- df_total[7,2:5]/2800000
+Hispanic <- (df_total[3,2:5] + df_total[4,2:5])/577500
+Hispanic
+Race <- data.frame(Race=c('Asian', 'Black', 'White', 'Hispanic'))
+x <- rbind(Asian, Black, White, Hispanic)
+x <- cbind(Race,x)
+x
+
+p5 <- ggplot(x, aes(x=Race, y=Heroin, fill=Race)) + geom_bar(stat="identity") + labs(y='Race proportion by Heroin') + theme_minimal()
+p6 <- ggplot(x, aes(x=Race, y=Fcount, fill=Race)) + geom_bar(stat="identity") + labs(y='Race proportion by Fentanyl') + theme_minimal()
+p7 <- ggplot(x, aes(x=Race, y=Ocount, fill=Race)) + geom_bar(stat="identity") + labs(y='Race proportion for Oxycodone') + theme_minimal()
+p8 <- ggplot(x, aes(x=Race, y=Acount, fill=Race)) + geom_bar(stat="identity") + labs(y='Race proportion for Any Opioid') + theme_minimal()
+multiplot(p5,p6,p7,p8, cols = 2)
+```
+
+Overall, white people are being affected the most by proportion for Heroin, Fentanyl, Oxycodone, and Opioids. In general, hispanics and black are similarly affected by all of these drugs but asians tend to be the least affected. 
+
+
+
+
